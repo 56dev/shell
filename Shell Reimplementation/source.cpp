@@ -129,16 +129,12 @@ int main()
 					WaitForSingleObject(processInfo.hProcess, INFINITE);
 					CloseHandle(processInfo.hThread);
 					CloseHandle(processInfo.hProcess);
-					std::cout << "\nSHELL: Program finished executing" << std::endl;
 				}
 			}
 			else
 				std::cout << "\"" << userInput[0] << "\"" << " not recognized as a valid command!" << std::endl;
 		}
-
 		
-		
-
 	}
 
 	return 0;
@@ -164,32 +160,107 @@ std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::s
 		for (const auto& entry : std::filesystem::directory_iterator{ directoryString, std::filesystem::directory_options::skip_permission_denied })
 		{			
 			
+
+			if (param != entry.path().stem().string())
+				continue;
 			std::error_code ec1{};
+
 			if (!entry.is_regular_file(ec1) || ec1)
 			{
-				if (param == entry.path().stem().string())
-					std::cout << "entry is not a file, or access failed!" << std::endl;
+				
+				std::cout << "entry is not a file, or access failed!" << std::endl;
 				continue;
 			}
 			
 			if (entry.path().extension() != ".exe")
 			{
-				if (param == entry.path().stem().string())
-					std::cout << "file is not an executable!" << std::endl;
+				
+				std::cout << "file is not an executable!" << std::endl;
 				continue;
 			}
-										
+
+			if (!hasExecutePermissions(entry.path()))
+			{
+				continue;
+			}
 			
-			if (param == entry.path().stem().string())
-				return entry.path();
-
-		}
-		
-	
+			return entry.path();
+			
+		}	
 	}
-
 	return std::nullopt;
 }
+
+// (a lot of bullshit)
+bool hasExecutePermissions(const std::filesystem::path& path)
+{
+	PSECURITY_DESCRIPTOR pSD{ nullptr};
+	PACL pDACL{ nullptr };
+
+	DWORD result = GetNamedSecurityInfo(
+		path.c_str(),
+		SE_FILE_OBJECT,
+		OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+		nullptr,
+		nullptr,
+		&pDACL,
+		nullptr,
+		&pSD
+	);
+	
+
+	if (result != ERROR_SUCCESS)
+	{
+		std::cout << "unable to get sec info" << std::endl;
+		return false;
+	}
+	
+	HANDLE hToken{ nullptr };
+	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_IMPERSONATE, &hToken))
+	{
+		LocalFree(pSD);
+		std::cout << "unable to open process token" << std::endl;
+		return false;
+	}
+
+	HANDLE hImpersonatedToken{ nullptr };
+	if (!DuplicateToken(hToken, SecurityImpersonation, &hImpersonatedToken))
+	{
+		CloseHandle(hToken);
+		LocalFree(pSD);
+		std::cout << "unable to duplicate token" << std::endl;
+		return false;
+	}
+
+	GENERIC_MAPPING mapping{ {} };
+	mapping.GenericRead = FILE_GENERIC_READ;
+	mapping.GenericWrite = FILE_GENERIC_WRITE;
+	mapping.GenericExecute = FILE_GENERIC_EXECUTE;
+	mapping.GenericAll = FILE_ALL_ACCESS;;
+
+	PRIVILEGE_SET privileges{ {} };
+	DWORD privilegeSetLength = sizeof(privileges);
+	ACCESS_MASK grantedAccess{ 0 };
+	BOOL accessStatus{ FALSE };
+
+	if (!AccessCheck(pSD, hImpersonatedToken, FILE_EXECUTE, &mapping, &privileges, &privilegeSetLength, &grantedAccess, &accessStatus))
+	{
+		std::cout << "access check was unable to succeed" << std::endl;
+		std::cout << GetLastError() << std::endl;
+		accessStatus = FALSE;
+	}
+
+	CloseHandle(hImpersonatedToken);
+	CloseHandle(hToken);
+	LocalFree(pSD);
+
+	if (!accessStatus)
+		std::cout << "access check rejected the request" << std::endl;
+
+	return accessStatus != FALSE;
+}
+
+
 
 
 
