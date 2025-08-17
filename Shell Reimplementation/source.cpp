@@ -10,8 +10,14 @@
 #include <stdlib.h>
 #include <sstream>
 #include <filesystem>
+#include <windows.h>
+#include <winbase.h>
+#include <shellapi.h>
+#include <aclapi.h>
 
 
+std::optional<std::filesystem::path> searchThroughPATH(std::string&, std::string&);
+bool hasExecutePermissions(const std::filesystem::path&);
 
 int main()
 {
@@ -29,101 +35,106 @@ int main()
 		}
 	};
 	
-	
 
-	//std::string path = getenv("PATH");
+	std::string path{ getenv("PATH")};
+//	std::string path = "\
+//C:\\MinGW\\bin;\
+//%USERPROFILE%;C:\\Games;";
 
-	//for security and convenience purposes, using a local path
-	//instead of the system path.
-	//PLEASE UNCOMMENT ABOVE CODE LINE IF NEED SYSTEM PATH!
-	std::string path = "\
-C:\\MinGW\\bin;\
-C:\\Games;";
-	std::cout << "A Shell Reimplementation by 56dev_. (2025)" << std::endl;
+	std::cout << "A Shell Reimplementation by 56dev_. (2025)" << "\n";
 	std::cout << "ONLY FOR WINDOWS!\n" << std::endl;
-	std::string input{};
+
+	std::cout << "NOTICE: this is a developer build!" << std::endl;
+
+	#ifndef _WIN32
+		std::cout << "This machine is not on Windows. You cannot use the shell." << std::endl;
+		return 0;
+	#endif
+
 	while (true)
 	{
 
 		std::cout << "$ ";
 
-		std::getline(std::cin, input);
+		std::string               userLine{};
+
+		std::getline(std::cin, userLine);
+
+		if (userLine.empty())
+		{
+			continue;
+		}
+
+		//echo processes parameters differently
+		if (userLine.substr(0, 4) == prefixes[1])
+		{
+			std::cout << userLine << "\n";
+			continue;
+
+		}
+
+		std::vector<std::string> userInput{};
+		std::stringstream     sm{ userLine };
+		std::string              temporary{};
+
+		while (sm >> temporary)
+			userInput.push_back(temporary);
 
 		//exit
-		if (input.find(prefixes[0]) == 0)
+		if (userInput[0] == prefixes[0])
 			return 0;
-		//echo
-		else if (input.find(prefixes[1]) == 0)
-		{
-			std::cout << input.substr(5) << std::endl;
-			
-		}
 		//type
-		else if (input.find(prefixes[2]) == 0)
+		else if (userInput[0] == prefixes[2])
 		{
-			std::string param = input.substr(5);
 
-			if (std::find(prefixes.begin(), prefixes.end(), param) != std::end(prefixes))
-				std::cout << param << " is a builtin command." << std::endl;
+			if (std::find(prefixes.begin(), prefixes.end(), userInput[1]) != std::end(prefixes))
+				std::cout << userInput[1] << " is a builtin command." << std::endl;
 			else
 			{
+				std::optional<std::filesystem::path> foundPath{ searchThroughPATH(path, userInput[1]) };
 
-				auto dir_it = std::filesystem::directory_iterator("C:\\MinGW\\bin");
-
-				
-				std::stringstream stream{ path };
-
-				std::string directoryString{};
-				bool hasFoundMatchingExecutable{ false };
-				std::string foundPath;
-				while (getline(stream, directoryString, ';'))
-				{
-					for (auto const& entry : std::filesystem::directory_iterator{ directoryString })
-					{
-						//a hilarious way to check if the extension is an exe
-						//so hilarious, there's probably a better way
-						if (entry.path().filename().replace_extension("exe") != entry.path().filename())
-						{
-							continue;
-						}
-						if (param == entry.path().filename().replace_extension(""))
-						{
-							hasFoundMatchingExecutable = true;
-							//for some reason, directoryString is empty when going out of this loop.
-							//maybe getline isn't so straightforward...
-							foundPath = directoryString;
-							break;
-						}
-
-					}
-
-				}
-				
-				
-
-				if (hasFoundMatchingExecutable)
-					std::cout << param << " is in " << foundPath << std::endl;
+				if (foundPath)
+					std::cout << userInput[1] << " is in " << foundPath.value().replace_filename("") << std::endl;
 				else
-					std::cout << param << " is not recognized as a valid command!" << std::endl;
-
-			}
-			
+					std::cout << userInput[1] << " is not recognized as a valid command!" << std::endl;
+			}			
 			
 		}
 		//path
-		else if (input.find(prefixes[3]) == 0)
+		else if (userInput[0] == prefixes[3])
 		{
 			std::stringstream ss{ path };
-			std::string temporary{};
-			while (std::getline(ss, temporary, ';'))
-			{
-				std::cout << temporary << "\n";
-			}
-			std::cout << std::endl;
-			
+			std::string pathTemporary{};
+			while (std::getline(ss, pathTemporary, ';'))
+				std::cout << pathTemporary << "\n";
+
+			std::cout << std::endl;			
 		}
 		else
-			std::cout << "\"" << input << "\"" << " not recognized as a valid command!" << std::endl;
+		{			
+			std::optional<std::filesystem::path> foundPath{ searchThroughPATH(path, userInput[0]) };
+						
+			if (foundPath)
+			{
+				std::string cmd{};
+				for (int i{ 0 }; i < userInput.size(); ++i)
+				{
+					cmd.append(userInput[i]).append(" ");
+				}
+				STARTUPINFOA startupInfo{ {sizeof(startupInfo)} };
+				PROCESS_INFORMATION processInfo{};
+
+				if (CreateProcessA(foundPath.value().string().c_str(), &cmd.front(), NULL, NULL, TRUE, 0, NULL, NULL, &startupInfo, &processInfo))
+				{
+					WaitForSingleObject(processInfo.hProcess, INFINITE);
+					CloseHandle(processInfo.hThread);
+					CloseHandle(processInfo.hProcess);
+					std::cout << "\nSHELL: Program finished executing" << std::endl;
+				}
+			}
+			else
+				std::cout << "\"" << userInput[0] << "\"" << " not recognized as a valid command!" << std::endl;
+		}
 
 		
 		
@@ -132,4 +143,53 @@ C:\\Games;";
 
 	return 0;
 }
+
+std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::string& param)
+{
+	std::stringstream stream{ path };
+
+	std::string directoryString{};
+	
+	while (getline(stream, directoryString, ';'))
+	{
+		std::error_code ec{};
+
+		if (!std::filesystem::is_directory(directoryString, ec))
+			continue;
+
+		if (ec)
+			std::cerr << ec << std::endl;
+		ec.clear();
+		
+		for (const auto& entry : std::filesystem::directory_iterator{ directoryString, std::filesystem::directory_options::skip_permission_denied })
+		{			
+			
+			std::error_code ec1{};
+			if (!entry.is_regular_file(ec1) || ec1)
+			{
+				if (param == entry.path().stem().string())
+					std::cout << "entry is not a file, or access failed!" << std::endl;
+				continue;
+			}
+			
+			if (entry.path().extension() != ".exe")
+			{
+				if (param == entry.path().stem().string())
+					std::cout << "file is not an executable!" << std::endl;
+				continue;
+			}
+										
+			
+			if (param == entry.path().stem().string())
+				return entry.path();
+
+		}
+		
+	
+	}
+
+	return std::nullopt;
+}
+
+
 
