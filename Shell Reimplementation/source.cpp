@@ -11,13 +11,12 @@
 #include <sstream>
 #include <filesystem>
 #include <windows.h>
-#include <winbase.h>
-#include <shellapi.h>
 #include <aclapi.h>
 
-
+//TODO: BE ABLE TO LOOK AT ENVIRONMENT VARIABLES
 std::optional<std::filesystem::path> searchThroughPATH(std::string&, std::string&);
 bool hasExecutePermissions(const std::filesystem::path&);
+bool queryEnvironmentVariable(const std::string&, std::string&);
 
 int main()
 {
@@ -31,14 +30,19 @@ int main()
 			"exit",
 			"echo",
 			"type",
-			"path"
+			"path",
+			"pwd",
+			"cd"
 		}
 	};
 	
+	
 
-	std::string path{ getenv("PATH")};
+	std::string path{};
+	queryEnvironmentVariable("PATH", path);
+
 //	std::string path = "\
-//C:\\MinGW\\bin;\
+//C:\\MinGW\\bin;;\
 //%USERPROFILE%;C:\\Games;";
 
 	std::cout << "A Shell Reimplementation by 56dev_. (2025)" << "\n";
@@ -56,52 +60,90 @@ int main()
 
 		std::cout << "$ ";
 
-		std::string               userLine{};
+		std::string userLine{};
 
 		std::getline(std::cin, userLine);
 
 		if (userLine.empty())
-		{
 			continue;
-		}
 
-		//echo processes parameters differently
+		//ECHO-LIKE PARAMETER PROCESSING
+		//		User input split into: command and argument, separated by either 
+		//		1 or an arbitrary amount of whitespace
+		//echo
 		if (userLine.substr(0, 4) == prefixes[1])
 		{
-			std::cout << userLine << "\n";
+
+			//TODO: PRINT ENVIRONMENT VARIABLES
+			if (userLine.size() <= 5)
+				std::cout << "" << std::endl;
+			else
+				std::cout << userLine.substr(5) << "\n";
 			continue;
 
 		}
+		//cd
+		else if (userLine.substr(0, 2) == prefixes[5])
+		{
+			if (userLine.size() <= 3)
+				continue;
 
-		std::vector<std::string> userInput{};
+			//TODO: GET ENVIRONMENT VARIABLE
+			
+			std::string directory{ userLine.substr(2) };
+			directory.erase(std::remove(directory.begin(), directory.end(), '\"'), directory.end());
+
+			auto first = directory.find_first_not_of(' ');
+
+			if (!directory.size() == 0 && first != std::string::npos)
+			{
+				directory = directory.substr(first);
+
+				if (!std::filesystem::exists(directory))
+					std::cout << "System cannot find the path specified!" << std::endl;
+				else if (!std::filesystem::is_directory(directory))
+					std::cout << "Invalid directory name." << std::endl;
+				else
+					std::filesystem::current_path(directory);
+			}		
+
+			continue;
+		}
+
+		//EXE-LIKE PARAMETER PROCESSING
+		//		User input split into: command, argument-list
+		//		arbitrary amount of whitespace between arguments.
+		//		white-space preserving arguments ==> wrap in quotes.
+
+		std::vector<std::string> userInputVector{};
 		std::stringstream     sm{ userLine };
 		std::string              temporary{};
 
-		while (sm >> temporary)
-			userInput.push_back(temporary);
+		while (sm >> std::quoted(temporary))
+			userInputVector.push_back(temporary);		
 
 		//exit
-		if (userInput[0] == prefixes[0])
+		if (userInputVector[0] == prefixes[0])
 			return 0;
 		//type
-		else if (userInput[0] == prefixes[2])
+		else if (userInputVector[0] == prefixes[2])
 		{
 
-			if (std::find(prefixes.begin(), prefixes.end(), userInput[1]) != std::end(prefixes))
-				std::cout << userInput[1] << " is a builtin command." << std::endl;
+			if (std::find(prefixes.begin(), prefixes.end(), userInputVector[1]) != std::end(prefixes))
+				std::cout << userInputVector[1] << " is a builtin command." << std::endl;
 			else
 			{
-				std::optional<std::filesystem::path> foundPath{ searchThroughPATH(path, userInput[1]) };
+				std::optional<std::filesystem::path> foundPath{ searchThroughPATH(path, userInputVector[1]) };
 
 				if (foundPath)
-					std::cout << userInput[1] << " is in " << foundPath.value().replace_filename("") << std::endl;
+					std::cout << userInputVector[1] << " is in " << foundPath.value().replace_filename("").string() << std::endl;
 				else
-					std::cout << userInput[1] << " is not recognized as a valid command!" << std::endl;
+					std::cout << userInputVector[1] << " is not recognized as a valid command!" << std::endl;
 			}			
 			
 		}
 		//path
-		else if (userInput[0] == prefixes[3])
+		else if (userInputVector[0] == prefixes[3])
 		{
 			std::stringstream ss{ path };
 			std::string pathTemporary{};
@@ -110,21 +152,24 @@ int main()
 
 			std::cout << std::endl;			
 		}
+		//pwd
+		else if (userInputVector[0] == prefixes[4])
+			std::cout << std::filesystem::current_path().string() << std::endl;
+
+		//EXTERNAL EXE PARAMETER PROCESSING; AND INVALIDATION
+		//		Entire line of user input passed into an EXE if it exists.
+		//		Else, invalidated.
 		else
 		{			
-			std::optional<std::filesystem::path> foundPath{ searchThroughPATH(path, userInput[0]) };
-						
+			std::optional<std::filesystem::path> foundPath{ searchThroughPATH(path, userInputVector[0]) };
+
 			if (foundPath)
 			{
-				std::string cmd{};
-				for (int i{ 0 }; i < userInput.size(); ++i)
-				{
-					cmd.append(userInput[i]).append(" ");
-				}
+				//(!) WARNING, GUI EXECUTABLES MAY FREEZE THE SHELL!
 				STARTUPINFOA startupInfo{ {sizeof(startupInfo)} };
 				PROCESS_INFORMATION processInfo{};
-
-				if (CreateProcessA(foundPath.value().string().c_str(), &cmd.front(), NULL, NULL, TRUE, 0, NULL, NULL, &startupInfo, &processInfo))
+				
+				if (CreateProcessA(foundPath.value().string().c_str(), &userLine.front(), NULL, NULL, TRUE, 0, NULL, NULL, &startupInfo, &processInfo))
 				{
 					WaitForSingleObject(processInfo.hProcess, INFINITE);
 					CloseHandle(processInfo.hThread);
@@ -132,7 +177,7 @@ int main()
 				}
 			}
 			else
-				std::cout << "\"" << userInput[0] << "\"" << " not recognized as a valid command!" << std::endl;
+				std::cout << "\"" << userInputVector[0] << "\"" << " not recognized as a valid command!" << std::endl;
 		}
 		
 	}
@@ -143,7 +188,6 @@ int main()
 std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::string& param)
 {
 	std::stringstream stream{ path };
-
 	std::string directoryString{};
 	
 	while (getline(stream, directoryString, ';'))
@@ -158,44 +202,31 @@ std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::s
 		ec.clear();
 		
 		for (const auto& entry : std::filesystem::directory_iterator{ directoryString, std::filesystem::directory_options::skip_permission_denied })
-		{			
-			
+		{				
 
 			if (param != entry.path().stem().string())
 				continue;
 			std::error_code ec1{};
 
 			if (!entry.is_regular_file(ec1) || ec1)
-			{
-				
 				std::cout << "entry is not a file, or access failed!" << std::endl;
-				continue;
-			}
-			
-			if (entry.path().extension() != ".exe")
-			{
-				
-				std::cout << "file is not an executable!" << std::endl;
-				continue;
-			}
 
-			if (!hasExecutePermissions(entry.path()))
-			{
-				continue;
-			}
+			else if (entry.path().extension() != ".exe")
+				std::cout << "file is not an executable!" << std::endl;
+
+			else if (hasExecutePermissions(entry.path()))
+				return entry.path();
+
 			
-			return entry.path();
 			
 		}	
 	}
 	return std::nullopt;
 }
 
-// (a lot of bullshit)
 bool hasExecutePermissions(const std::filesystem::path& path)
 {
 	PSECURITY_DESCRIPTOR pSD{ nullptr};
-	PACL pDACL{ nullptr };
 
 	DWORD result = GetNamedSecurityInfo(
 		path.c_str(),
@@ -203,7 +234,7 @@ bool hasExecutePermissions(const std::filesystem::path& path)
 		OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
 		nullptr,
 		nullptr,
-		&pDACL,
+		nullptr,
 		nullptr,
 		&pSD
 	);
@@ -211,24 +242,14 @@ bool hasExecutePermissions(const std::filesystem::path& path)
 
 	if (result != ERROR_SUCCESS)
 	{
-		std::cout << "unable to get sec info" << std::endl;
+		std::cout << "unable to get security info" << std::endl;
 		return false;
 	}
 	
-	HANDLE hToken{ nullptr };
-	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_IMPERSONATE, &hToken))
-	{
-		LocalFree(pSD);
-		std::cout << "unable to open process token" << std::endl;
-		return false;
-	}
 
-	HANDLE hImpersonatedToken{ nullptr };
-	if (!DuplicateToken(hToken, SecurityImpersonation, &hImpersonatedToken))
+	if (!ImpersonateSelf(SecurityImpersonation))
 	{
-		CloseHandle(hToken);
-		LocalFree(pSD);
-		std::cout << "unable to duplicate token" << std::endl;
+		std::cout << "unable to impersonate" << std::endl;
 		return false;
 	}
 
@@ -240,18 +261,17 @@ bool hasExecutePermissions(const std::filesystem::path& path)
 
 	PRIVILEGE_SET privileges{ {} };
 	DWORD privilegeSetLength = sizeof(privileges);
+
 	ACCESS_MASK grantedAccess{ 0 };
 	BOOL accessStatus{ FALSE };
 
-	if (!AccessCheck(pSD, hImpersonatedToken, FILE_EXECUTE, &mapping, &privileges, &privilegeSetLength, &grantedAccess, &accessStatus))
+	if (!AccessCheck(pSD, GetCurrentThreadToken(), FILE_EXECUTE, &mapping, &privileges, &privilegeSetLength, &grantedAccess, &accessStatus))
 	{
-		std::cout << "access check was unable to succeed" << std::endl;
-		std::cout << GetLastError() << std::endl;
+		std::cout << "access check was unable to succeed: " << GetLastError() << std::endl;
 		accessStatus = FALSE;
 	}
 
-	CloseHandle(hImpersonatedToken);
-	CloseHandle(hToken);
+	RevertToSelf();
 	LocalFree(pSD);
 
 	if (!accessStatus)
@@ -260,6 +280,17 @@ bool hasExecutePermissions(const std::filesystem::path& path)
 	return accessStatus != FALSE;
 }
 
+
+bool queryEnvironmentVariable(const std::string& variableName, std::string& outstr)
+{
+	DWORD size = GetEnvironmentVariableA(variableName.c_str(), nullptr, 0);
+
+	outstr = std::string(size, '\0');
+	if (GetEnvironmentVariableA(variableName.c_str(), outstr.data(), size))
+		return true;
+
+	return false;
+}
 
 
 
