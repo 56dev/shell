@@ -231,14 +231,16 @@ bool hasExecutePermissions(const std::filesystem::path& path)
 
 	if (result != ERROR_SUCCESS)
 	{
-		std::cout << "unable to get security info" << std::endl;
+		std::cerr << "Checking Security Permissions: Unable to get security info for path:" << path << std::endl;
+		LocalFree(pSD);
 		return false;
 	}
 	
 
 	if (!ImpersonateSelf(SecurityImpersonation))
 	{
-		std::cout << "unable to impersonate" << std::endl;
+		std::cerr << "Checking Security Permissions: Unable to impersonate" << std::endl;
+		LocalFree(pSD);
 		return false;
 	}
 
@@ -256,20 +258,17 @@ bool hasExecutePermissions(const std::filesystem::path& path)
 
 	if (!AccessCheck(pSD, GetCurrentThreadToken(), FILE_EXECUTE, &mapping, &privileges, &privilegeSetLength, &grantedAccess, &accessStatus))
 	{
-		std::cout << "access check was unable to succeed: " << GetLastError() << std::endl;
+		std::cerr << "Checking Security Permissions: Access check was unable to succeed for path " << path << ": error " << GetLastError() << std::endl;
 		accessStatus = FALSE;
 	}
 
 	RevertToSelf();
 	LocalFree(pSD);
 
-	if (!accessStatus)
-		std::cout << "access check rejected the request" << std::endl;
-
 	return accessStatus != FALSE;
 }
 
-//if query fails, then outstr is set to an arbitrary number of null characters.
+//if query fails, then outstr is set to an arbitrary number of null-terminator characters.
 //the null-terminator from GetEnvironmentVariableA is automatically stripped out. 
 bool queryEnvironmentVariable(const std::string& variableName, std::string& outstr)
 {
@@ -306,8 +305,7 @@ void substituteEnvironmentVariablesInString(std::string& str)
 		{
 			std::string replacement{};
 			if (queryEnvironmentVariable(str.substr(percentPos1 + 1, percentPos2 - percentPos1 - 1), replacement))
-			{
-				
+			{				
 				str.replace(percentPos1, percentPos2 - percentPos1 + 1, replacement);
 				i = percentPos1 + replacement.size();
 			}
