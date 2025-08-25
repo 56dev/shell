@@ -27,23 +27,17 @@ int main()
 
 	std::vector<std::string> prefixes{
 		{
-			"exit",
 			"echo",
+			"cd",
+			"exit",
 			"type",
 			"path",
-			"pwd",
-			"cd"
+			"pwd"
 		}
-	};
-	
-	
+	};		
 
 	std::string path{};
 	queryEnvironmentVariable("PATH", path);
-
-//	std::string path = "\
-//C:\\MinGW\\bin;;\
-//%USERPROFILE%;C:\\Games;";
 
 	std::cout << "A Shell Reimplementation by 56dev_. (2025)" << "\n";
 	std::cout << "ONLY FOR WINDOWS!\n" << std::endl;
@@ -73,12 +67,11 @@ int main()
 
 		while (sm >> std::quoted(temporary))
 			userInputVector.push_back(temporary);
-
 		//ECHO-LIKE PARAMETER PROCESSING
 		//		User input split into: command and argument, separated by either 
 		//		1 or an arbitrary amount of whitespace
 		//echo
-		if (userInputVector[0] == prefixes[1])
+		if (userInputVector[0] == prefixes[0])
 		{
 			if (userLine.size() <= 5)
 				std::cout << "" << std::endl;
@@ -92,7 +85,7 @@ int main()
 
 		}
 		//cd
-		else if (userInputVector[0] == prefixes[5])
+		else if (userInputVector[0] == prefixes[1])
 		{
 			if (userLine.size() <= 3)
 				continue;
@@ -125,10 +118,10 @@ int main()
 		//		arbitrary amount of whitespace between arguments.
 		//		white-space preserving arguments ==> wrap in quotes.
 		//exit
-		if (userInputVector[0] == prefixes[0])
+		else if (userInputVector[0] == prefixes[2])
 			return 0;
 		//type
-		else if (userInputVector[0] == prefixes[2])
+		else if (userInputVector[0] == prefixes[3])
 		{
 
 			if (std::find(prefixes.begin(), prefixes.end(), userInputVector[1]) != std::end(prefixes))
@@ -145,7 +138,7 @@ int main()
 			
 		}
 		//path
-		else if (userInputVector[0] == prefixes[3])
+		else if (userInputVector[0] == prefixes[4])
 		{
 			std::stringstream ss{ path };
 			std::string pathTemporary{};
@@ -155,8 +148,9 @@ int main()
 			std::cout << std::endl;			
 		}
 		//pwd
-		else if (userInputVector[0] == prefixes[4])
+		else if (userInputVector[0] == prefixes[5])
 			std::cout << std::filesystem::current_path().string() << std::endl;
+
 
 		//EXTERNAL EXE PARAMETER PROCESSING; AND INVALIDATION
 		//		Entire line of user input passed into an EXE if it exists.
@@ -167,7 +161,6 @@ int main()
 
 			if (foundPath)
 			{
-				//(!) WARNING, GUI EXECUTABLES MAY FREEZE THE SHELL!
 				STARTUPINFOA startupInfo{ {sizeof(startupInfo)} };
 				PROCESS_INFORMATION processInfo{};
 				
@@ -187,7 +180,6 @@ int main()
 	return 0;
 }
 
-//(!) ISSUE: SOMEWHAT SLOW.
 std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::string& param)
 {
 	std::stringstream stream{ path };
@@ -208,16 +200,14 @@ std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::s
 			std::error_code ec1{};
 
 			if (!entry.is_regular_file(ec1) || ec1)
-				std::cout << "entry is not a file, or access failed!" << std::endl;
+				continue;
+				
+			if (entry.path().extension() != ".exe")
+				continue;
 
-			else if (entry.path().extension() != ".exe")
-				std::cout << "file is not an executable!" << std::endl;
-
-			else if (hasExecutePermissions(entry.path()))
+			if (hasExecutePermissions(entry.path()))
 				return entry.path();
-
-			
-			
+						
 		}	
 	}
 	return std::nullopt;
