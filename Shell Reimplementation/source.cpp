@@ -13,10 +13,13 @@
 #include <windows.h>
 #include <aclapi.h>
 
-std::optional<std::filesystem::path> searchThroughPATH(std::string&, std::string&);
-bool hasExecutePermissions(const std::filesystem::path&);
+namespace fs = std::filesystem;
+
+std::optional<fs::path> searchThroughPATH(std::string&, std::string&);
+bool hasExecutePermissions(const fs::path&);
 bool queryEnvironmentVariable(const std::string&, std::string&);
 void substituteEnvironmentVariablesInString(std::string&);
+void output(std::string&, std::ostream, std::vector<std::string>);
 
 int main()
 {
@@ -39,7 +42,7 @@ int main()
 	std::string path{};
 	queryEnvironmentVariable("PATH", path);
 
-	std::cout << "A Shell Reimplementation by 56dev_. (2025)" << "\n";
+	std::cout << "A Command Line Reimplementation by 56dev_. (2025)" << "\n";
 	std::cout << "ONLY FOR WINDOWS!\n" << std::endl;
 
 	std::cout << "NOTICE: this is a developer build!" << std::endl;
@@ -51,46 +54,116 @@ int main()
 
 	while (true)
 	{
-
+		
 		std::cout << "$ ";
 
-		std::string userLine{};
+		//INPUT PROCESSING
+		std::string commandLine{};
+		std::vector<std::string> redirectorsCout{};
+		std::getline(std::cin, commandLine);
 
-		std::getline(std::cin, userLine);
+		if (commandLine.empty())
+			continue;
 
-		if (userLine.empty())
+		std::size_t rediri = commandLine.find('>');
+
+		if (rediri != std::string::npos)
+		{			
+			std::string temporary{};
+			std::vector<int> indicesWhereRedirectionOperatorPresent{};
+
+			while (true)
+			{
+				indicesWhereRedirectionOperatorPresent.push_back(static_cast<int>(rediri));
+				std::size_t nextSubRediri = commandLine.substr(rediri + 1).find('>');
+				if (nextSubRediri == std::string::npos)
+					break;
+				rediri += 1 + nextSubRediri;
+			}
+
+			int previousI{0};
+			for (int i : indicesWhereRedirectionOperatorPresent)
+			{
+			
+				if (commandLine.find_first_not_of(" ", i + 1) >= commandLine.size())
+					continue;
+
+				std::string t{};
+				int x{ static_cast<int>(commandLine.find_first_not_of("> ", i)) };
+				std::string cmds{ commandLine.substr(x)};
+				int quoteCount{0};
+				if (cmds[0] != '\"')
+				{
+					std::stringstream cmdss{ cmds };
+					std::getline(cmdss, t, ' ');
+				}
+				else
+					
+				{	
+					++quoteCount;
+					for (int j {1}; j < cmds.size(); ++j)
+					{
+						if (cmds[j] == '\"')
+						{
+							++quoteCount;
+							break;
+						}
+						t.push_back(cmds[j]);
+					}
+				}
+				redirectorsCout.push_back(t);
+				if (previousI > commandLine.size() || i - previousI > commandLine.size())
+				{
+					break;
+				}
+				temporary.append(commandLine.substr(previousI, i - previousI));
+				previousI = /* i + */ x /* - i */ + quoteCount + static_cast<int>(t.size());
+			}
+			if(previousI < commandLine.size())
+				temporary.append(commandLine.substr(previousI, commandLine.size() - previousI - 1));
+			
+			commandLine = temporary;
+		}
+
+		if (commandLine.empty())
 			continue;
 
 		std::vector<std::string> userInputVector{};
-		std::stringstream     sm{ userLine };
+		std::stringstream     sm{ commandLine };
 		std::string              temporary{};
 
-		while (sm >> std::quoted(temporary))
+		
+
+		while (sm >> std::quoted(temporary)) 
 			userInputVector.push_back(temporary);
+
+		
+		
+
+
 		//ECHO-LIKE PARAMETER PROCESSING
 		//		User input split into: command and argument, separated by either 
 		//		1 or an arbitrary amount of whitespace
 		//echo
 		if (userInputVector[0] == prefixes[0])
 		{
-			if (userLine.size() <= 5)
+			if (commandLine.size() <= 5)
 				std::cout << "" << std::endl;
 			else
 			{
-				std::string output = userLine.substr(5);
+				std::string output = commandLine.substr(5);
 				substituteEnvironmentVariablesInString(output);
 				std::cout << output << "\n";
 			}
 			continue;
-
 		}
 		//cd
 		else if (userInputVector[0] == prefixes[1])
 		{
-			if (userLine.size() <= 3)
+			if (commandLine.size() <= 3)
 				continue;
 						
-			std::string directory{ userLine.substr(3) };
+			std::string directory{ commandLine.substr(3) };
 
 			substituteEnvironmentVariablesInString(directory);
 			std::cout << directory << std::endl;
@@ -102,12 +175,12 @@ int main()
 			{
 				directory = directory.substr(first);
 				std::cout << directory << std::endl;
-				if (!std::filesystem::exists(directory))
+				if (!fs::exists(directory))
 					std::cout << "System cannot find the path specified!" << std::endl;
-				else if (!std::filesystem::is_directory(directory))
+				else if (!fs::is_directory(directory))
 					std::cout << "Invalid directory name." << std::endl;
 				else
-					std::filesystem::current_path(directory);
+					fs::current_path(directory);
 			}		
 
 			continue;
@@ -128,7 +201,7 @@ int main()
 				std::cout << userInputVector[1] << " is a builtin command." << std::endl;
 			else
 			{
-				std::optional<std::filesystem::path> foundPath{ searchThroughPATH(path, userInputVector[1]) };
+				std::optional<fs::path> foundPath{ searchThroughPATH(path, userInputVector[1]) };
 
 				if (foundPath)
 					std::cout << userInputVector[1] << " is in " << foundPath.value().replace_filename("").string() << std::endl;
@@ -149,7 +222,7 @@ int main()
 		}
 		//pwd
 		else if (userInputVector[0] == prefixes[5])
-			std::cout << std::filesystem::current_path().string() << std::endl;
+			std::cout << fs::current_path().string() << std::endl;
 
 
 		//EXTERNAL EXE PARAMETER PROCESSING; AND INVALIDATION
@@ -157,14 +230,14 @@ int main()
 		//		Else, invalidated.
 		else
 		{			
-			std::optional<std::filesystem::path> foundPath{ searchThroughPATH(path, userInputVector[0]) };
+			std::optional<fs::path> foundPath{ searchThroughPATH(path, userInputVector[0]) };
 
 			if (foundPath)
 			{
 				STARTUPINFOA startupInfo{ {sizeof(startupInfo)} };
 				PROCESS_INFORMATION processInfo{};
 				
-				if (CreateProcessA(foundPath.value().string().c_str(), &userLine.front(), NULL, NULL, TRUE, 0, NULL, NULL, &startupInfo, &processInfo))
+				if (CreateProcessA(foundPath.value().string().c_str(), &commandLine.front(), NULL, NULL, TRUE, 0, NULL, NULL, &startupInfo, &processInfo))
 				{
 					WaitForSingleObject(processInfo.hProcess, INFINITE);
 					CloseHandle(processInfo.hThread);
@@ -180,7 +253,7 @@ int main()
 	return 0;
 }
 
-std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::string& param)
+std::optional<fs::path> searchThroughPATH(std::string& path, std::string& param)
 {
 	std::stringstream stream{ path };
 	std::string directoryString{};
@@ -189,10 +262,10 @@ std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::s
 	{
 		std::error_code ec{};
 
-		if (!std::filesystem::is_directory(directoryString, ec))
+		if (!fs::is_directory(directoryString, ec))
 			continue;
 		
-		for (const auto& entry : std::filesystem::directory_iterator{ directoryString, std::filesystem::directory_options::skip_permission_denied })
+		for (const auto& entry : fs::directory_iterator{ directoryString, fs::directory_options::skip_permission_denied })
 		{				
 
 			if (param != entry.path().stem().string())
@@ -213,7 +286,7 @@ std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::s
 	return std::nullopt;
 }
 
-bool hasExecutePermissions(const std::filesystem::path& path)
+bool hasExecutePermissions(const fs::path& path)
 {
 	PSECURITY_DESCRIPTOR pSD{ nullptr};
 
@@ -293,7 +366,7 @@ bool queryEnvironmentVariable(const std::string& variableName, std::string& outs
 }
 
 //string manipulation bullshit
-//works in place
+//works in-place
 void substituteEnvironmentVariablesInString(std::string& str)
 {
 	std::size_t i{ 0 };
