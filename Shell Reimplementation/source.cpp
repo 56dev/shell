@@ -13,10 +13,10 @@
 #include <windows.h>
 #include <aclapi.h>
 
-//TODO: BE ABLE TO LOOK AT ENVIRONMENT VARIABLES
 std::optional<std::filesystem::path> searchThroughPATH(std::string&, std::string&);
 bool hasExecutePermissions(const std::filesystem::path&);
 bool queryEnvironmentVariable(const std::string&, std::string&);
+void substituteEnvironmentVariablesInString(std::string&);
 
 int main()
 {
@@ -67,30 +67,40 @@ int main()
 		if (userLine.empty())
 			continue;
 
+		std::vector<std::string> userInputVector{};
+		std::stringstream     sm{ userLine };
+		std::string              temporary{};
+
+		while (sm >> std::quoted(temporary))
+			userInputVector.push_back(temporary);
+
 		//ECHO-LIKE PARAMETER PROCESSING
 		//		User input split into: command and argument, separated by either 
 		//		1 or an arbitrary amount of whitespace
 		//echo
-		if (userLine.substr(0, 4) == prefixes[1])
+		if (userInputVector[0] == prefixes[1])
 		{
-
-			//TODO: PRINT ENVIRONMENT VARIABLES
 			if (userLine.size() <= 5)
 				std::cout << "" << std::endl;
 			else
-				std::cout << userLine.substr(5) << "\n";
+			{
+				std::string output = userLine.substr(5);
+				substituteEnvironmentVariablesInString(output);
+				std::cout << output << "\n";
+			}
 			continue;
 
 		}
 		//cd
-		else if (userLine.substr(0, 2) == prefixes[5])
+		else if (userInputVector[0] == prefixes[5])
 		{
 			if (userLine.size() <= 3)
 				continue;
+						
+			std::string directory{ userLine.substr(3) };
 
-			//TODO: GET ENVIRONMENT VARIABLE
-			
-			std::string directory{ userLine.substr(2) };
+			substituteEnvironmentVariablesInString(directory);
+			std::cout << directory << std::endl;
 			directory.erase(std::remove(directory.begin(), directory.end(), '\"'), directory.end());
 
 			auto first = directory.find_first_not_of(' ');
@@ -98,7 +108,7 @@ int main()
 			if (!directory.size() == 0 && first != std::string::npos)
 			{
 				directory = directory.substr(first);
-
+				std::cout << directory << std::endl;
 				if (!std::filesystem::exists(directory))
 					std::cout << "System cannot find the path specified!" << std::endl;
 				else if (!std::filesystem::is_directory(directory))
@@ -114,14 +124,6 @@ int main()
 		//		User input split into: command, argument-list
 		//		arbitrary amount of whitespace between arguments.
 		//		white-space preserving arguments ==> wrap in quotes.
-
-		std::vector<std::string> userInputVector{};
-		std::stringstream     sm{ userLine };
-		std::string              temporary{};
-
-		while (sm >> std::quoted(temporary))
-			userInputVector.push_back(temporary);		
-
 		//exit
 		if (userInputVector[0] == prefixes[0])
 			return 0;
@@ -185,6 +187,7 @@ int main()
 	return 0;
 }
 
+//(!) ISSUE: SOMEWHAT SLOW.
 std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::string& param)
 {
 	std::stringstream stream{ path };
@@ -196,10 +199,6 @@ std::optional<std::filesystem::path> searchThroughPATH(std::string& path, std::s
 
 		if (!std::filesystem::is_directory(directoryString, ec))
 			continue;
-
-		if (ec)
-			std::cerr << ec << std::endl;
-		ec.clear();
 		
 		for (const auto& entry : std::filesystem::directory_iterator{ directoryString, std::filesystem::directory_options::skip_permission_denied })
 		{				
@@ -280,18 +279,53 @@ bool hasExecutePermissions(const std::filesystem::path& path)
 	return accessStatus != FALSE;
 }
 
-
+//if query fails, then outstr is set to an arbitrary number of null characters.
+//the null-terminator from GetEnvironmentVariableA is automatically stripped out. 
 bool queryEnvironmentVariable(const std::string& variableName, std::string& outstr)
 {
+	
+	if (variableName.empty())
+	{
+		outstr = std::string{ '\0' };
+		return false;
+	}
+	
 	DWORD size = GetEnvironmentVariableA(variableName.c_str(), nullptr, 0);
 
 	outstr = std::string(size, '\0');
 	if (GetEnvironmentVariableA(variableName.c_str(), outstr.data(), size))
+	{
+		//this is needed to remove the null-terminator from the string. 
+		outstr.erase(std::find(outstr.begin(), outstr.end(), '\0'), outstr.end());
 		return true;
+	}
 
 	return false;
 }
 
+//string manipulation bullshit
+//works in place
+void substituteEnvironmentVariablesInString(std::string& str)
+{
+	std::size_t i{ 0 };
+	while (str.find('%', i) != std::string::npos)
+	{
+		std::size_t percentPos1 = str.find('%', i);
 
-
-
+		if (std::size_t percentPos2 = str.find('%', percentPos1 + 1); percentPos2 != std::string::npos)
+		{
+			std::string replacement{};
+			if (queryEnvironmentVariable(str.substr(percentPos1 + 1, percentPos2 - percentPos1 - 1), replacement))
+			{
+				
+				str.replace(percentPos1, percentPos2 - percentPos1 + 1, replacement);
+				i = percentPos1 + replacement.size();
+			}
+			else
+				i = percentPos2 + 1;
+		}
+		else
+			break;
+		
+	}
+}
