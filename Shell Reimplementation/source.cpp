@@ -25,16 +25,22 @@ int main()
 	std::cout << std::unitbuf;
 	std::cerr << std::unitbuf;
 
-	std::vector<std::string> prefixes{
+	std::vector<std::string> prefixesEchoLike{
 		{
 			"echo",
 			"cd",
+			"mkdir"
+		}
+	};
+	std::vector<std::string> prefixesExeLike{
+		{
 			"exit",
 			"type",
 			"path",
-			"pwd"
+			"pwd",
+			"dir"
 		}
-	};		
+	};
 
 	std::string path{};
 	queryEnvironmentVariable("PATH", path);
@@ -120,7 +126,7 @@ int main()
 		//		User input split into: command and argument, separated by either 
 		//		1 or an arbitrary amount of whitespace
 		//echo
-		if (userInputVector[0] == prefixes[0])
+		if (userInputVector[0] == prefixesEchoLike[0])
 		{
 			if (commandLine.size() <= 5)
 				std::cout << std::endl;
@@ -132,7 +138,7 @@ int main()
 			}
 		}
 		//cd
-		else if (userInputVector[0] == prefixes[1])
+		else if (userInputVector[0] == prefixesEchoLike[1])
 		{
 			if (commandLine.size() > 3)
 			{
@@ -149,27 +155,32 @@ int main()
 						std::cerr << "System cannot find the path specified!" << std::endl;
 					else if (!fs::is_directory(directory))
 						std::cerr << "Invalid directory name." << std::endl;
-					else 
+					else
 					{
 						std::cout << directory << std::endl;
 						fs::current_path(directory);
 					}
 				}
-			}						
+			}
 		}
+		//mkdir
+		else if (userInputVector[0] == prefixesEchoLike[2])
+			fs::create_directories(commandLine.substr(6));
+
 
 		//EXE-LIKE PARAMETER PROCESSING
 		//		User input split into: command, argument-list
 		//		arbitrary amount of whitespace between arguments.
 		//		white-space preserving arguments ==> wrap in quotes.
 		//exit
-		else if (userInputVector[0] == prefixes[2])
+		else if (userInputVector[0] == prefixesExeLike[0])
 			return 0;
 		//type
-		else if (userInputVector[0] == prefixes[3])
+		else if (userInputVector[0] == prefixesExeLike[1])
 		{
 
-			if (std::find(prefixes.begin(), prefixes.end(), userInputVector[1]) != std::end(prefixes))
+			if (std::find(prefixesEchoLike.begin(), prefixesEchoLike.end(), userInputVector[1]) != std::end(prefixesEchoLike) || \
+				std::find(prefixesExeLike.begin(), prefixesExeLike.end(), userInputVector[1]) != std::end(prefixesExeLike))
 				std::cout << userInputVector[1] << " is a builtin command." << std::endl;
 			else
 			{
@@ -179,23 +190,25 @@ int main()
 					std::cout << userInputVector[1] << " is in " << foundPath.value().replace_filename("").string() << std::endl;
 				else
 					std::cout << userInputVector[1] << " is not recognized as a valid command!" << std::endl;
-			}			
-			
+			}
+
 		}
 		//path
-		else if (userInputVector[0] == prefixes[4])
+		else if (userInputVector[0] == prefixesExeLike[2])
 		{
 			std::stringstream ss{ path };
 			std::string pathTemporary{};
 			while (std::getline(ss, pathTemporary, ';'))
 				std::cout << pathTemporary << "\n";
 
-			std::cout << std::endl;			
+			std::cout << std::endl;
 		}
 		//pwd
-		else if (userInputVector[0] == prefixes[5])
+		else if (userInputVector[0] == prefixesExeLike[3])
 			std::cout << fs::current_path().string() << std::endl;
-
+		//dir
+		else if (userInputVector[0] == prefixesExeLike[4])
+			std::cout << " " << std::endl;
 
 		//EXTERNAL EXE PARAMETER PROCESSING; AND INVALIDATION
 		//		Entire line of user input passed into an EXE if it exists.
