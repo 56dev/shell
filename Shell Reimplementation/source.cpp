@@ -21,9 +21,13 @@ std::string searchStringForRedirectors(std::string&, std::string&, std::string, 
 int main()
 {
 
+	std::locale::global(std::locale(""));
+	std::wcout.imbue(std::locale());
+
 
 	std::cout << std::unitbuf;
 	std::cerr << std::unitbuf;
+	std::wcout << std::unitbuf;
 
 	std::vector<std::string> prefixesEchoLike{
 		{
@@ -53,7 +57,7 @@ int main()
 		std::cout << "This machine is not on Windows. You cannot use the shell." << std::endl;
 		return 0;
 	#endif
-
+	
 	auto cout_buff = std::cout.rdbuf();
 	auto cerr_buff = std::cerr.rdbuf();
 
@@ -208,7 +212,30 @@ int main()
 			std::cout << fs::current_path().string() << std::endl;
 		//dir
 		else if (userInputVector[0] == prefixesExeLike[4])
-			std::cout << " " << std::endl;
+		{
+			for (const auto& entry : fs::directory_iterator{ fs::current_path(), fs::directory_options::skip_permission_denied})
+			{
+				try {
+					std::cout << std::chrono::time_point_cast<std::chrono::seconds>(entry.last_write_time()) << "\t";
+
+					if (entry.is_directory())
+						std::cout << "<DIR>\t\t\t";
+					else if (entry.is_regular_file())
+						std::cout << entry.file_size() << "\t\t\t";
+					std::cout << entry.path().filename().string() << std::endl;
+				}
+				catch (std::system_error& e)
+				{
+					std::cerr << std::endl;
+					std::cerr << "------------------------------" << std::endl;
+					std::cerr << "(!) Unexpected System Error: " << e.what() << std::endl;
+					std::cerr << "------------------------------" << std::endl;
+				}
+				
+			}
+
+			
+		}
 
 		//EXTERNAL EXE PARAMETER PROCESSING; AND INVALIDATION
 		//		Entire line of user input passed into an EXE if it exists.
