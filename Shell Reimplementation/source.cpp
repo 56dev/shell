@@ -16,7 +16,7 @@ bool hasExecutePermissions(const fs::path&);
 bool queryEnvironmentVariable(const std::string&, std::string&);
 void substituteEnvironmentVariablesInString(std::string&);
 bool createNewFile(std::string&);
-
+std::string searchStringForRedirectors(std::string&, std::string&, std::string, bool&);
 
 int main()
 {
@@ -39,9 +39,8 @@ int main()
 	std::string path{};
 	queryEnvironmentVariable("PATH", path);
 
-	std::cout << "A Command Line Reimplementation by 56dev_. (2025)" << "\n";
+	std::cout << "A Command Line Reimplementation by 56dev_. (2025)" << std::endl;
 	std::cout << "ONLY FOR WINDOWS!\n" << std::endl;
-
 	std::cout << "NOTICE: this is a developer build!" << std::endl;
 
 	#ifndef _WIN32
@@ -50,10 +49,12 @@ int main()
 	#endif
 
 	auto cout_buff = std::cout.rdbuf();
+	auto cerr_buff = std::cerr.rdbuf();
 
 	while (true)
 	{
 		std::cout.rdbuf(cout_buff);
+		std::cerr.rdbuf(cerr_buff);
 		
 		std::cout << "$ ";
 
@@ -63,92 +64,41 @@ int main()
 
 		std::string commandLine{};
 		std::string redirectorCout{};
+		std::string redirectorCerr{};
 		std::getline(std::cin, commandLine);
 		
 		if (commandLine.empty())
 			continue;
 
 
-
-		std::size_t RedirOpInd = commandLine.find('>');
-
-		if (RedirOpInd != std::string::npos)
-		{			
-			std::string strippedCmdLn{};
-			std::vector<int> indicesWhereRedirectionOperatorPresent{};
-
-			while (true)
-			{
-				indicesWhereRedirectionOperatorPresent.push_back(static_cast<int>(RedirOpInd));
-				std::size_t nextSubRediri = commandLine.substr(RedirOpInd + 1).find('>');
-				if (nextSubRediri == std::string::npos)
-					break;
-				RedirOpInd += 1 + nextSubRediri;
-			}
-
-			int previousIAfterSkippingRedirectionOperand{0};
-
-			for (int redirectionOpInd : indicesWhereRedirectionOperatorPresent)
-			{
-			
-				if (commandLine.find_first_not_of("> ", redirectionOpInd) >= commandLine.size())
-				{
-					std::cout << "The syntax is incorrect" << std::endl;
-					inputProcessingSuccess = false;
-					break;
-				}
-
-				std::string                                                                      fragmentOfTemporary{};
-				int redirectionOperandStart{ static_cast<int>(commandLine.find_first_not_of("> ", redirectionOpInd)) };
-				std::string                                cmdLineSubstr{ commandLine.substr(redirectionOperandStart)};
-				int                                                                                      quoteCount{0};
-
-				if (cmdLineSubstr[0] != '\"')
-				{
-					std::stringstream cmdLineSubstrStream{ cmdLineSubstr };
-					std::getline(cmdLineSubstrStream, fragmentOfTemporary, ' ');
-				}
-				else
-					
-				{	
-					++quoteCount;
-					for (int j {1}; j < cmdLineSubstr.size(); ++j)
-					{
-						if (cmdLineSubstr[j] == '\"')
-						{
-							++quoteCount;
-							break;
-						}
-						fragmentOfTemporary.push_back(cmdLineSubstr[j]);
-					}
-				}
-				if(redirectionOpInd == indicesWhereRedirectionOperatorPresent.back())
-					redirectorCout = fragmentOfTemporary;
-
-				/*if (previousIAfterSkippingRedirectionOperand > commandLine.size() || i - previousIAfterSkippingRedirectionOperand > commandLine.size())
-					break;*/
-
-				strippedCmdLn.append(commandLine.substr(previousIAfterSkippingRedirectionOperand, redirectionOpInd - previousIAfterSkippingRedirectionOperand));
-				previousIAfterSkippingRedirectionOperand = redirectionOperandStart + quoteCount + static_cast<int>(fragmentOfTemporary.size());
-			}
-
-			if(previousIAfterSkippingRedirectionOperand < commandLine.size())
-				strippedCmdLn.append(commandLine.substr(previousIAfterSkippingRedirectionOperand, commandLine.size() - previousIAfterSkippingRedirectionOperand - 1));
-			
-			commandLine = strippedCmdLn;
-		}
+		commandLine = searchStringForRedirectors(commandLine, redirectorCout, "1>", inputProcessingSuccess);
+		commandLine = searchStringForRedirectors(commandLine, redirectorCerr, "2>", inputProcessingSuccess);
+		
 		
 		if (commandLine.empty() || !inputProcessingSuccess)
 			continue;
 
-		std::ofstream filestream{};
+		std::ofstream coutFilestream{};
 		if (!redirectorCout.empty())
 		{
-			filestream.open(redirectorCout);
-			if (filestream.is_open())
+			coutFilestream.open(redirectorCout);
+			if (coutFilestream.is_open())
 			{
-				filestream << std::unitbuf;
-				std::cout.rdbuf(filestream.rdbuf());
+				coutFilestream << std::unitbuf;
+				std::cout.rdbuf(coutFilestream.rdbuf());
+			}
+			else
+				std::cerr << "Failed to open file: " << GetLastError() << std::endl;
+		}
+
+		std::ofstream cerrFilestream{};
+		if (!redirectorCerr.empty())
+		{
+			cerrFilestream.open(redirectorCerr);
+			if (cerrFilestream.is_open())
+			{
+				cerrFilestream << std::unitbuf;
+				std::cerr.rdbuf(cerrFilestream.rdbuf());
 			}
 			else
 				std::cerr << "Failed to open file: " << GetLastError() << std::endl;
@@ -195,13 +145,15 @@ int main()
 				if (!directory.size() == 0 && first != std::string::npos)
 				{
 					directory = directory.substr(first);
-					std::cout << directory << std::endl;
 					if (!fs::exists(directory))
-						std::cout << "System cannot find the path specified!" << std::endl;
+						std::cerr << "System cannot find the path specified!" << std::endl;
 					else if (!fs::is_directory(directory))
-						std::cout << "Invalid directory name." << std::endl;
-					else
+						std::cerr << "Invalid directory name." << std::endl;
+					else 
+					{
+						std::cout << directory << std::endl;
 						fs::current_path(directory);
+					}
 				}
 			}						
 		}
@@ -268,8 +220,10 @@ int main()
 				std::cout << "\"" << userInputVector[0] << "\"" << " not recognized as a valid command!" << std::endl;
 		}
 
-		if (filestream.is_open())
-			filestream.close();
+		if (coutFilestream.is_open())
+			coutFilestream.close();
+		if (cerrFilestream.is_open())
+			cerrFilestream.close();
 		
 	}
 
@@ -414,3 +368,77 @@ void substituteEnvironmentVariablesInString(std::string& str)
 	}
 }
 
+//takes in the command line, the string to store the filepath in, and the redirector substring to search for, and an out 
+//variable to switch if the operations fails. returns the stripped command line.
+std::string searchStringForRedirectors(std::string& commandLine, std::string& fileRedirect, std::string redirOp, bool& syntaxCorrectFlag)
+{
+	std::size_t RedirOpInd = commandLine.find(redirOp);
+
+	if (RedirOpInd != std::string::npos)
+	{
+		std::string strippedCmdLn{};
+		std::vector<int> indicesWhereRedirectionOperatorPresent{};
+
+		while (true)
+		{
+			indicesWhereRedirectionOperatorPresent.push_back(static_cast<int>(RedirOpInd));
+			std::size_t nextSubRediri = commandLine.substr(RedirOpInd + 1).find(redirOp);
+			if (nextSubRediri == std::string::npos)
+				break;
+			RedirOpInd += 1 + nextSubRediri;
+		}
+
+		int previousIAfterSkippingRedirectionOperand{ 0 };
+
+		for (int redirectionOpInd : indicesWhereRedirectionOperatorPresent)
+		{
+
+			if (commandLine.find_first_not_of(redirOp + " ", redirectionOpInd) >= commandLine.size())
+			{
+				std::cout << "The syntax is incorrect" << std::endl;
+				syntaxCorrectFlag = false;
+				return commandLine;
+			}
+
+			std::string                                                  fragmentOfTemporary{};
+			int redirectionOperandStart{ static_cast<int>(commandLine.find_first_not_of(" ", redirectionOpInd + redirOp.size()))};
+			std::string           cmdLineSubstr{ commandLine.substr(redirectionOperandStart) };
+			int                                                                quoteCount{ 0 };
+
+			if (cmdLineSubstr[0] != '\"')
+			{
+				std::stringstream cmdLineSubstrStream{ cmdLineSubstr };
+				std::getline(cmdLineSubstrStream, fragmentOfTemporary, ' ');
+			}
+			else
+
+			{
+				++quoteCount;
+				for (int j{ 1 }; j < cmdLineSubstr.size(); ++j)
+				{
+					if (cmdLineSubstr[j] == '\"')
+					{
+						++quoteCount;
+						break;
+					}
+					fragmentOfTemporary.push_back(cmdLineSubstr[j]);
+				}
+			}
+			if (redirectionOpInd == indicesWhereRedirectionOperatorPresent.back())
+				fileRedirect = fragmentOfTemporary;
+
+			/*if (previousIAfterSkippingRedirectionOperand > commandLine.size() || i - previousIAfterSkippingRedirectionOperand > commandLine.size())
+				break;*/
+
+			strippedCmdLn.append(commandLine.substr(previousIAfterSkippingRedirectionOperand, redirectionOpInd - previousIAfterSkippingRedirectionOperand));
+			previousIAfterSkippingRedirectionOperand = redirectionOperandStart + quoteCount + static_cast<int>(fragmentOfTemporary.size());
+		}
+
+		if (previousIAfterSkippingRedirectionOperand < commandLine.size())
+			strippedCmdLn.append(commandLine.substr(previousIAfterSkippingRedirectionOperand, commandLine.size() - previousIAfterSkippingRedirectionOperand));
+
+		return strippedCmdLn;
+	}
+	
+	return commandLine;
+}
