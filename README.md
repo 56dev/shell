@@ -6,3 +6,17 @@ This is being created loosely following the [CodeCrafters Build your own Shell](
 
 As of August 27, 2025: ~400 LOC.
 
+## Commands Included
+
+- echo 
+- cd 
+- mkdir 
+- exit
+- type (determine if command exists)
+- pwd (print working directory)
+- dir (list contents of current directory)
+
+## Other Features
+
+Able to search through PATH.
+Able to execute command-line EXEs (GUI => see Issues).
