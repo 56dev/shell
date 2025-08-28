@@ -20,14 +20,8 @@ std::string searchStringForRedirectors(std::string&, std::string&, std::string, 
 
 int main()
 {
-
-	std::locale::global(std::locale(""));
-	std::wcout.imbue(std::locale());
-
-
 	std::cout << std::unitbuf;
 	std::cerr << std::unitbuf;
-	std::wcout << std::unitbuf;
 
 	std::vector<std::string> prefixesEchoLike{
 		{
@@ -42,7 +36,7 @@ int main()
 			"type",
 			"path",
 			"pwd",
-			"dir"
+			"dir",
 		}
 	};
 
@@ -51,7 +45,6 @@ int main()
 
 	std::cout << "A Command Line Reimplementation by 56dev_. (2025)" << std::endl;
 	std::cout << "ONLY FOR WINDOWS!\n" << std::endl;
-	std::cout << "NOTICE: this is a developer build!" << std::endl;
 
 	#ifndef _WIN32
 		std::cout << "This machine is not on Windows. You cannot use the shell." << std::endl;
@@ -265,6 +258,9 @@ int main()
 		if (cerrFilestream.is_open())
 			cerrFilestream.close();
 		
+		if (commandLine.find('>') != std::string::npos)
+			std::cout << std::endl << "This program does not support operator>. Did you mean to use 1> (cout) or 2> (cerr)?" << std::endl;
+
 	}
 
 	return 0;
